@@ -1,43 +1,42 @@
-Proyecto de Microservicios
-Nombre: Zeus Aguirre
+# Proyecto de Microservicios - Zeus Aguirre
 
-Carrera: Ingeniería de Software (6to Semestre)
+**Nombre:** Zeus Aguirre  
+**Carrera:** Ingeniería de Software (6to Semestre)  
+**Materia:** Diseño y Arquitectura de Software  
+**Fecha:** Abril 2026
 
-Materia: Diseno y Arquitectura de Software
+## ¿Qué problema resuelve mi aplicación?
+Es un sistema de registro de usuarios diseñado para manejar altas cargas de trabajo. Separa el registro básico de las tareas pesadas (como notificaciones o procesamiento de datos) para que la página siempre responda rápido al cliente.
 
-Fecha: Abril 2026
+## ¿Cuál era el problema del monolito?
+Cuando probé el monolito con el comando `ab` de Apache, los tiempos de respuesta estaban por los 730-740ms. Esto pasaba porque el servidor tenía que guardar al usuario en la base de datos y al mismo tiempo procesar una "notificación pesada". Si esa parte tardaba, toda la página se quedaba cargando y se saturaba fácil.
 
-Introducción
-En esta tarea pasamos una aplicación que estaba en un solo bloque (monolito) a un esquema de microservicios usando Docker. La idea era ver cómo separar las tareas pesadas para que el sistema no se trabe cuando muchos usuarios intentan registrarse al mismo tiempo.
+## ¿Qué responsabilidad tiene cada microservicio?
+Separé el código en dos servicios independientes:
+* **Servicio A:** Es el que ve el usuario. Se encarga de recibir los datos del formulario y guardarlos en la tabla principal.
+* **Servicio B:** Es un worker que corre por detrás. Recibe avisos del Servicio A para hacer el "trabajo pesado" y guarda sus propios logs.
 
-El Problema con el Monolito
-Cuando probé el monolito con el comando ab de Apache, los tiempos de respuesta estaban por los 730-740ms. Esto pasaba porque el servidor tenía que guardar al usuario en la base de datos y al mismo tiempo procesar una "notificación pesada". Si una parte fallaba o tardaba, toda la página se quedaba cargando.
+## ¿Cómo se comunican los servicios?
+El Servicio A le avisa al Servicio B mediante una petición HTTP interna. En el código, en lugar de usar una IP, uso el nombre del contenedor `servicio_b` como hostname. Esto funciona gracias al DNS interno que crea la red de Docker Compose.
 
-Mi Arquitectura
-Separé el código en dos carpetas: servicio_a y servicio_b.
+## Tablas en la base de datos (AWS RDS)
+Usé MariaDB en AWS con una base de datos llamada `db_aguirre`. Así quedó la estructura:
 
-Servicio A: Es el que ve el usuario. Recibe el nombre y el correo, lo guarda en la tabla usuarios_aguirre de RDS y luego le avisa al Servicio B por una petición HTTP interna.
+| Tabla | Servicio dueño | Qué guarda |
+|-------|---------------|------------|
+| `usuarios_aguirre` | Servicio A | Datos del registro (nombre y correo) |
+| `logs_procesamiento` | Servicio B | Logs de las notificaciones procesadas |
 
-Servicio B: Este corre por detrás. Recibe el aviso del Servicio A y guarda un log en la tabla logs_procesamiento. Simula ser un proceso que tarda, pero como es un microservicio aparte, no detiene al primero.
+## ¿Qué pasa si el Servicio B se cae? (Resiliencia)
+Esta es la mayor ventaja. Si apago el Servicio B, el Servicio A sigue funcionando perfectamente. El usuario puede registrarse y el sistema le avisa que el módulo de notificaciones está en mantenimiento, pero su registro **sí se guarda** en la DB. En el monolito, si fallaba el proceso de notificación, tronaba todo el registro.
 
-Base de Datos (AWS RDS)
-Usé MariaDB en AWS. Creé una base de datos llamada db_aguirre con estas dos tablas:
-
-usuarios_aguirre: Para los registros principales.
-
-logs_procesamiento: Para los eventos del Servicio B.
-
-Pruebas de Resiliencia
-Lo mejor de este diseño es que si apago el Servicio B, el Servicio A sigue funcionando. El usuario puede registrarse y le sale un mensaje de que el sistema de notificaciones está en mantenimiento, pero su registro sí se guarda. Esto en el monolito hubiera mandado un error 500 y no dejaría hacer nada.
-
-Cómo correrlo
-Para levantar todo el proyecto usé:
-
-Bash
+## Cómo levantar el proyecto
+1. Clonar este repositorio.
+2. Entrar a la carpeta `microservicios`.
+3. Revisar que el archivo `docker-compose.yml` tenga las credenciales correctas de RDS.
+4. Ejecutar el comando:
+```bash
 sudo docker-compose up --build -d
-Y para revisar que los dos contenedores estén arriba:
 
-Bash
-sudo docker ps
 Conclusión
 Lo más difícil fue configurar el docker-compose.yml y las reglas de red en AWS, pero al final funcionó. Los microservicios son mejores para aplicaciones que necesitan estar siempre activas, aunque el código se vuelve un poco más complejo de conectar.
